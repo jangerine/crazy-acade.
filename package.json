@@ -1,0 +1,17 @@
+{
+  "name": "keua-online",
+  "version": "1.0.0",
+  "description": "크레이지아케이드 스타일 실시간 멀티플레이어 물풍선 게임",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
