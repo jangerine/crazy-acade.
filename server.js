@@ -68,7 +68,7 @@ function createMap() {
     }
     grid.push(row);
   }
-  // 스폰 코너 주변은 비워두고, 나머지에 파괴가능 벽 랜덤 배치
+  // 스폰 코너 주변은 비워두고, 나머지에 파괴가능 벽 배치
   const spawnClear = [
     [1, 1], [2, 1], [1, 2],
     [COLS - 2, 1], [COLS - 3, 1], [COLS - 2, 2],
@@ -77,11 +77,24 @@ function createMap() {
   ];
   const clearSet = new Set(spawnClear.map(([c, r]) => `${c},${r}`));
 
+  // 실제 크아 맵처럼 점대칭(180도 회전 대칭) 구조로 생성 -> 어느 스폰에서 시작해도 공평한 맵이 됨
   for (let r = 1; r < ROWS - 1; r++) {
     for (let c = 1; c < COLS - 1; c++) {
       if (grid[r][c] === 1) continue;
-      if (clearSet.has(`${c},${r}`)) continue;
-      if (Math.random() < 0.55) grid[r][c] = 2;
+
+      const mirrorR = ROWS - 1 - r;
+      const mirrorC = COLS - 1 - c;
+      const idx = r * COLS + c;
+      const mirrorIdx = mirrorR * COLS + mirrorC;
+      if (idx > mirrorIdx) continue; // 짝이 이미 처리됨 -> 스킵 (대칭으로 채워짐)
+
+      if (clearSet.has(`${c},${r}`) || clearSet.has(`${mirrorC},${mirrorR}`)) continue;
+      if (grid[mirrorR][mirrorC] === 1) continue; // 대칭 위치가 기둥이면 짝이 안 맞으니 스킵
+
+      if (Math.random() < 0.55) {
+        grid[r][c] = 2;
+        grid[mirrorR][mirrorC] = 2;
+      }
     }
   }
   return grid;
@@ -259,15 +272,16 @@ function placeBubble(room, player) {
   player.onOwnBubble = bubble.id;
 }
 
-function popBubble(room, bubble, popped = new Set()) {
+function popBubble(room, bubble, popped = new Set(), burstsOut = []) {
   if (popped.has(bubble.id)) return [];
   popped.add(bubble.id);
   room.bubbles = room.bubbles.filter(b => b.id !== bubble.id);
 
   const affectedCells = [{ col: bubble.col, row: bubble.row }];
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const arms = { up: 0, down: 0, left: 0, right: 0 };
+  const dirs = [['right', 1, 0], ['left', -1, 0], ['down', 0, 1], ['up', 0, -1]];
 
-  for (const [dx, dy] of dirs) {
+  for (const [name, dx, dy] of dirs) {
     for (let step = 1; step <= bubble.range; step++) {
       const c = bubble.col + dx * step;
       const r = bubble.row + dy * step;
@@ -275,6 +289,7 @@ function popBubble(room, bubble, popped = new Set()) {
       const cell = room.grid[r][c];
       if (cell === 1) break; // 파괴불가 벽에서 정지
       affectedCells.push({ col: c, row: r });
+      arms[name] = step; // 이 방향으로 실제 물이 도달한 거리 (연출용)
       if (cell === 2) {
         room.grid[r][c] = 0;
         maybeDropItem(room, c, r);
@@ -283,11 +298,16 @@ function popBubble(room, bubble, popped = new Set()) {
       // 경로에 다른 물풍선 있으면 연쇄 폭발
       const chainBubble = room.bubbles.find(b => b.col === c && b.row === r);
       if (chainBubble) {
-        const chainCells = popBubble(room, chainBubble, popped);
+        const chainCells = popBubble(room, chainBubble, popped, burstsOut);
         affectedCells.push(...chainCells);
       }
     }
   }
+
+  burstsOut.push({
+    col: bubble.col, row: bubble.row,
+    up: arms.up, down: arms.down, left: arms.left, right: arms.right
+  });
 
   // 플레이어 판정
   for (const pid in room.players) {
@@ -391,12 +411,11 @@ function startGameLoop(roomId) {
     // 물풍선 타이머 체크
     const now = Date.now();
     const toPop = room.bubbles.filter(b => now - b.placedAt >= BUBBLE_TIMER);
-    let poppedAny = false;
     const alreadyPopped = new Set();
+    const burstsOut = [];
     for (const b of toPop) {
       if (alreadyPopped.has(b.id)) continue;
-      popBubble(room, b, alreadyPopped);
-      poppedAny = true;
+      popBubble(room, b, alreadyPopped, burstsOut);
     }
 
     checkFreeing(room);
@@ -404,8 +423,8 @@ function startGameLoop(roomId) {
 
     io.to(roomId).emit('gameState', gameSnapshot(room));
 
-    if (poppedAny) {
-      io.to(roomId).emit('explosion', { cells: [...alreadyPopped] });
+    if (burstsOut.length > 0) {
+      io.to(roomId).emit('explosion', { bursts: burstsOut });
     }
 
     if (ended) {
