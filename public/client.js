@@ -107,26 +107,17 @@ socket.on('gameState', (snap) => {
   latestState = snap;
 });
 
-socket.on('explosion', ({ cells }) => {
+// ---------- 폭발(물보라) 애니메이션 ----------
+// 서버가 각 물풍선이 터질 때 중심 좌표 + 4방향으로 뻗은 거리(arm)를 보내줌
+// -> 크아처럼 중심에서 십자 방향으로 물이 시차를 두고 퍼져나가는 연출
+let activeBursts = [];
+const BURST_STEP_DELAY = 55;   // 한 칸씩 퍼지는 데 걸리는 시간(ms)
+const BURST_TILE_LIFE = 420;   // 각 칸이 화면에 보이는 시간(ms)
+
+socket.on('explosion', ({ bursts }) => {
   const now = Date.now();
-  cells.forEach(cell => {
-    // cell can be {col,row} objects flattened via Set of ids in server -> we get array from server differently
-  });
+  bursts.forEach(b => activeBursts.push({ ...b, startTime: now }));
 });
-
-// 서버는 explosion 이벤트에서 bubble id 리스트를 보내므로, 실제 시각효과는 gameState 변화(벽 파괴)로 갈음.
-// 대신 물풍선이 사라지는 시점에 간단한 팝 이펙트를 표시하기 위해 이전 프레임과 비교한다.
-let prevBubbleIds = new Set();
-
-function detectPops(snap) {
-  const currentIds = new Set(snap.bubbles.map(b => b.id));
-  prevBubbleIds.forEach(id => {
-    if (!currentIds.has(id)) {
-      // 이 물풍선이 사라짐 -> 위치를 몰라서 스킵 (간단화를 위해 생략 가능)
-    }
-  });
-  prevBubbleIds = currentIds;
-}
 
 const hudPlayers = document.getElementById('hud-players');
 
